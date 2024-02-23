@@ -1,0 +1,144 @@
+---
+title: "R Notebook to illustrate using R packages to predict race for voters without geocoding"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(rethnicity)
+library(predictrace)
+library(zipWRUext2)
+```
+
+load the Queens voter registration records came in fixed width format
+```{r}
+width = c(9,30,30,1,4,10,10,15,50,
+          40,5,4,50,50,50,50,8,
+          1,3,30,3,2,2,2,2,2,2,
+          8,2,1,8,4,20,3,15,8,100)
+df = read.fwf("Queens.txt", widths = width, fill = TRUE)
+str(df) #1190288 obs. of  37 variables
+
+# add column names and replace the space with "_"
+colnames(df) = c("County EMSID", "Last Name", "First Name", "Middle Initial","Name Suffix",
+                 "House Number","House Number Suffix","Apartment Number","Street Name","City","Zip Code",
+                 "Zip Code4","Mailing Address 1","Mailing Address 2","Mailing Address 3",
+                 "Mailing Address 4","Birth Date","Gender", "Political Party", "Other Party",
+                 "Election District","Assembly District","Congress District","Council District",
+                 "Senate District","Civil Court District","Judicial District","Registration Date",
+                 "Status Code","Voter Type","Eff Status Change Date","Year Last Voted",
+                 "TelephoneNum","Future Party","Future Other Party",
+                 "Future Party Effective Date","Email Address")
+
+colnames(df) = gsub(" ", "_", colnames(df))
+
+df_copy = df
+                 
+str(df_copy) #1190288 obs. of  37 variables
+```
+
+
+check missing values
+```{r}
+missing_counts <- df_copy %>%
+  summarise(across(everything(), ~sum(is.na(.))))
+
+print(missing_counts)
+
+# check if any duplicates in column County_EMSID
+duplicates <- sum(duplicated(df$County_EMSID))
+print(duplicates)
+
+```
+
+
+check how the prediction packages work
+predict_ethnicity method only accepts fullname or lastname
+```{r}
+test = predict_ethnicity(lastnames = "YU", method="lastname")
+test
+
+test1 = predictrace::predict_race("Yu", probability = FALSE)[,3]
+test1
+
+test2 = predictrace::predict_race("Yue", surname = FALSE, probability = FALSE)[,3]
+test2
+
+```
+
+
+Create race1 and race2 columns using rethnicity and predictrace packages
+```{r}
+df_copy <- df_copy %>%
+  mutate(race1 = predict_ethnicity(lastnames = Last_Name, method="lastname")[,6],
+         race2 = predictrace::predict_race(Last_Name, probability = FALSE)[,3]
+)
+
+head(df_copy, 100)
+
+```
+
+
+Create race3 column using zipWRUext2 package
+```{r}
+df_copy = zip_wru(df_copy, state = "NEW YORK",
+                             year1 = "2020", zip_col = "Zip_Code", surname_field = "Last_Name")
+
+# below section is to find the race that has the maximum probability
+# Specify the columns for which you want to find the maximum
+cols_to_check <- c("pred.whi", "pred.bla", "pred.his", "pred.asi", "pred.oth")
+
+# Get the column index of the maximum value in each row across specified columns
+max_col_index <- max.col(df_copy[cols_to_check])
+max_col_index
+
+# Create a new column to flag which column contains the maximum value
+df_copy$max_prob_race <- cols_to_check[max_col_index]
+
+# Print the data frame with the max_column flag
+#print(stratified_df_test)
+
+#class(stratified_df_test$max_prob_race)
+
+# create column race3
+df_copy = df_copy %>%
+  mutate(race3 = case_when(
+    str_detect(max_prob_race, "\\.whi$") ~ "white",
+    str_detect(max_prob_race, "\\.asi$") ~ "asian",
+    str_detect(max_prob_race, "\\.his$") ~ "hispanic",
+    str_detect(max_prob_race, "\\.bla$") ~ "black",
+    str_detect(max_prob_race, "\\.oth$") ~ "other",
+  ))
+
+head(df_copy, 10)
+
+# replace NA in race3 column with string "other"
+df_copy$race3 = ifelse(is.na(df_copy$race3), "other", df_copy$race3)
+df_copy %>% count(race3, name="UniqueNames")
+#df_copy %>% count(party_full, name = "UniqueCount")
+```
+
+compare the prediction results among three race columns
+```{r}
+df_copy %>% count(race1, name = "UniqueCount") # does not have "other" category which doesn't make much sense
+df_copy %>% count(race2, name = "UniqueCount") # too many categories
+df_copy %>% count(race3, name = "UniqueCount") # probably a good idea to go with the predictions made by race3
+
+```
+
+Create bar chart to show the race proportion in Queens (determined by race3 column)
+```{r}
+df_copy %>%
+  group_by(race3) %>%
+  summarise(cnt = n()) %>%
+  mutate(proportion = (cnt/sum(cnt))*100) %>%
+  ggplot(aes(y=proportion, x=fct_reorder(race3, proportion, .desc=TRUE))) +
+  geom_bar(position="dodge", stat="identity", fill="skyblue") +
+  geom_text(aes(label = paste0(round(proportion,1), "%")), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "Race % in Queens County New York",x = "race") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
