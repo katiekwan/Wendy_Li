@@ -10,6 +10,7 @@ library(tidycensus)
 options(tigris_use_cache = TRUE)
 library(tigris)
 library(leaflet)
+library(htmlwidgets) # use to export a leaflet map
 library(sf)
 library(wru)
 library(hrbrthemes)
@@ -46,6 +47,7 @@ ny_blocks = blocks(state = "NY",
                    year = "2010")
 ?blocks
 ny_blocks
+find("blocks")
 
 leaflet(ny_blocks) %>%
   addTiles() %>%
@@ -66,6 +68,8 @@ df_NAD83 = st_as_sf(df,coords = c("Longitude","Latitude"), crs = 4269)
 df_NAD83 #1,190,287 × 49
 names(df_NAD83)
 
+#?st_as_sf
+
 df_NAD83 %>%
   filter(county_emsid=="300090040")
 ```
@@ -75,6 +79,8 @@ also during this process, we generated 2,146 additional rows from prior step. Fo
 ```{r}
 df_sf_block <- st_join(df_NAD83, ny_blocks, join = st_within)
 df_sf_block # 1,192,433 × 66 before removing duplicates
+
+?st_join
 
 df_sf_block %>%
   count(COUNTYFP10, name="UniqueNames")
@@ -114,7 +120,6 @@ downloaded both 2010 and 2020 Census data for NY state. 2010 is supported in wru
 # Census for 2020
 census_ny <- get_census_data(state = "NY",census.geo = "block",year = "2020") 
 census_ny # don't overwirte this variable
-
 
 # Census for 2010. Don't know if county can be specified in the query
 census_ny_2010 <- get_census_data(states = c("NY"), census.geo = "block",year = "2010")
@@ -537,7 +542,22 @@ lapply(names(building_list), function(building) {
   write.csv(building_list[[building]], file = file_name, row.names = FALSE)
 })
 ```
-
+campaign ask: flagging PRIME voters (defined by the DEM voters who have voted three times in the past three years' DEM primaries)
+```{r}
+df_sf_block %>%
+  as.data.frame() %>%
+  filter(party_full == "Democratic") %>%
+  group_by(address) %>%
+  summarise(cnt_dem = n()) %>%
+  arrange(desc(cnt_dem)) %>%
+  mutate(rank_ = rank(-cnt_dem, ties.method = "min")) %>%
+  left_join(cols_required, by="address") %>% 
+  left_join(df_voter_history_pri21to23, by = "county_emsid") %>%
+  mutate(across(all_of(c("primary_2022", "primary_2021", "primary_2023")), ~ifelse(is.na(.), 0, .)),
+         floor_num = as.integer(str_extract(apartment_number, "\\d+")),
+         past3yr_primary_total = primary_2021 + primary_2022 + primary_2023) %>%
+  filter(past3yr_primary_total>=3) #48,613 PRIME voters
+```
 
 
 
@@ -1315,6 +1335,7 @@ df_map
 
 
 this might work in the Shiny app?
+the campaign does not need this. They know the magic number is 200,000 already. 
 ```{r}
 df_lat_long_unique = df_sf_block %>%
   as.data.frame() %>%
@@ -1345,7 +1366,7 @@ result_df <- data.frame(address = character(), cnt_dem = numeric(), rank_ = nume
 # Initialize variables
 #result <- character(0)
 cumulative_count <- 0
-target <- 10000
+target <- 200000
 
 # Iterate through the rows and add buildings until the target is reached
 for (i in 1:nrow(df_building)) {
@@ -1359,17 +1380,19 @@ for (i in 1:nrow(df_building)) {
 }
 
 # Print the list of buildings
-print(result_df)
+View(result_df)
+result_df
 
-
-leaflet(data=result_df) %>%
+m = leaflet(data=result_df) %>%
   addTiles() %>%  # Add default OpenStreetMap map tiles
   addMarkers(lng=~Longitude, lat=~Latitude, popup= ~as.character(address), label=~as.character(rank_))
 
+
+saveWidget(m, file = "interactive_map.html")
 ```
 
 
-create a query tool
+create a query tool?
 ```{r}
 # select fields that are being asked to be included in the voters list
 df_sf_block %>%
