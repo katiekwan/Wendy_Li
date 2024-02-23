@@ -1,6 +1,12 @@
 # History files
 .Rhistory
 .Rapp.history
+*.csv
+*.png
+*.txt
+*.DS_Store
+*.doc
+*.pdf
 
 # Session Data files
 .RData
