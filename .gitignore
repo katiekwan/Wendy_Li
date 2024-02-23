@@ -7,6 +7,9 @@
 *.DS_Store
 *.doc
 *.pdf
+.ipynb_checkpoints/
+*.html
+*.rtf
 
 # Session Data files
 .RData
