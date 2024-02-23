@@ -1,0 +1,422 @@
+---
+title: "R Notebook for Queens county voting history data cleanup"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggpattern)
+library(hrbrthemes)
+library(viridis)
+library(janitor)
+```
+
+
+
+
+load the voting history file came in fixed width format
+```{r}
+width = c(9,1,2,3,3,8,2,1,1)
+
+df_voter_hisotry = read.fwf("Queens History 11072023.txt", widths = width, fill = TRUE)
+
+# add column names
+colnames(df_voter_hisotry) = c("county_emsid", "Boro", "Assembly_District", "Election_District","Political_Party",
+                 "Election_Date","Election_Type","Voter_Type","Voting_Method")
+
+
+str(df_voter_hisotry)
+View(df_voter_hisotry)
+
+df_voter_hisotry_copy = df_voter_hisotry
+#df_voter_hisotry_copy$County_EMSID = factor(df_voter_hisotry_copy$County_EMSID)
+str(df_voter_hisotry_copy) #9913179
+View(df_voter_hisotry_copy)
+
+# below two dataframes have different memory so updating one won't update the other
+tracemem(df_voter_hisotry)==tracemem(df_voter_hisotry_copy)
+```
+
+Data wrangling - part I 
+1. Remove white space in county_emsid column
+2. Check if the dataset has duplicated rows and remove duplicated rows
+3. Extract year from Election_Date column
+```{r}
+df_voter_hisotry_copy = df_voter_hisotry_copy %>%
+  mutate_at(vars(county_emsid), trimws)
+
+# check duplicates - 16 rows 
+#get_dupes(df_voter_hisotry_copy) # from janitor package
+
+# two types of duplicated rows: 1) duplicate on all the fields 2) voter has two records for the same election type and election year. the only difference is Voting_Method B vs R. Type 1) can be dealt with using distinct()
+
+#example of duplicated rows before removing
+# type1
+# df_voter_hisotry_copy %>%
+#   filter(county_emsid=="01181591" & Election_Date==20021105)
+# # type2 votes double counting
+# df_voter_hisotry_copy %>%
+#   filter(county_emsid=="300652999" & Election_Date==19921103)
+
+# remove duplicate on all the fields
+df_voter_hisotry_copy = df_voter_hisotry_copy %>%
+  distinct()
+
+df_voter_hisotry_copy #9,913,171 observations
+
+# to deal with votes double counting issue caused by Voting_Method column. I decided to drop the column and then utilize distinct() one more time
+
+df_voter_hisotry_copy = df_voter_hisotry_copy %>%
+  select(-Voting_Method, -Voter_Type, -Political_Party) %>%
+  #get_dupes() #18 rows
+  distinct() %>%
+  mutate(election_year = as.integer(substr(as.character(Election_Date), 1, 4)))
+
+df_voter_hisotry_copy #9,913,162 observations
+
+```
+
+checking missingness of the columns
+```{r}
+df_voter_hisotry_copy %>%
+  summarise(across(everything(), ~sum(is.na(.)))) #gender & race_est have 14867 missing values
+```
+
+take a quick look at the data. looks like the data includes voting history outside of Queens county
+```{r}
+df_voter_hisotry_copy %>% count(Boro, name = "UniqueCount")
+df_voter_hisotry_copy %>% count(Election_Type, name = "UniqueCount")
+#View(df_voter_hisotry_copy)
+```
+
+calculate how many times a voter voted in the primary elections from year 2020 to year 2023. I chose year 2020 to year 2023 b/c it convered an election cycle (year 2020 was the last year that the Presidential Election was held
+)
+```{r}
+count_primary = as.data.frame(df_voter_hisotry_copy %>%
+  filter((Election_Type %in% c("PP", "PR")) & election_year>2019) %>%
+  select(county_emsid, election_year) %>% #606,983 observations
+  group_by(county_emsid, election_year) %>%
+  count() %>%
+  pivot_wider(names_from = "election_year", names_prefix = "primary_", values_from = "n")
+)
+
+# replace NA with value zero
+count_primary[is.na(count_primary)] = 0
+
+# arrange the order of columns
+count_primary = count_primary[, c("county_emsid", "primary_2020",
+                                  "primary_2021", "primary_2022", "primary_2023")]
+# check duplicates
+count_primary %>%
+  get_dupes() #no dupliates
+
+# cross check sum matches sum before the pivot_wider operation
+colSums(count_primary[c("primary_2020","primary_2022","primary_2021","primary_2023")])
+sum(colSums(count_primary[c("primary_2020","primary_2022","primary_2021","primary_2023")])) #606983
+
+count_primary #310,307 observations
+```
+
+Campaign ask: list years that voters voted from 2021 to 2023 (primary elections only)
+```{r}
+count_primary %>%
+  filter(!(primary_2021==0 & primary_2022==0 & primary_2023==0)) %>%
+  select(county_emsid, primary_2021, primary_2022, primary_2023) %>%
+  write.csv(file = "voting_history_primarycount21to23.csv", row.names = FALSE)
+
+```
+
+
+calculate how many times a voter voted in the general elections from year 2020 to year 2023
+```{r}
+count_general = as.data.frame(df_voter_hisotry_copy %>%
+  filter(Election_Type=="GE" & election_year>2019) %>%
+  select(county_emsid, election_year) %>% #1,576,830 observations
+  group_by(county_emsid, election_year) %>%
+  count() %>%
+  pivot_wider(names_from = "election_year", names_prefix = "general_", values_from = "n")
+)
+
+# replace NA with value zero
+count_general[is.na(count_general)] = 0
+
+# arrange the order of columns
+count_general = count_general[, c("county_emsid", "general_2020",
+                                  "general_2021", "general_2022", "general_2023")]
+# check duplicates
+count_general %>%
+  get_dupes() #no dupliates
+
+# cross check sum matches sum before the pivot_wider operation
+colSums(count_general[c("general_2020","general_2021", "general_2022", "general_2023")])
+sum(colSums(count_general[c("general_2020","general_2021", "general_2022", "general_2023")])) #1576830
+
+count_general #767,109 observations
+```
+
+full join count_general and count_primary
+```{r}
+count_primary %>%
+  mutate(is_in_general = county_emsid %in% count_general$county_emsid) %>%
+  filter(is_in_general==FALSE)
+
+count_join = full_join(count_general, count_primary, by = "county_emsid")
+
+# replace NA with value zero
+count_join[is.na(count_join)] = 0
+
+count_join %>%
+  get_dupes() # no duplicates which is expected
+
+count_join #777,897 observations
+
+
+```
+
+calculate how many times a voter voted from year 2020
+```{r}
+count_table_since2020 = as.data.frame(df_voter_hisotry_copy %>%
+                                        filter(election_year>2019) %>%
+                                        select(county_emsid, Election_Type) %>%
+                                        group_by(county_emsid, Election_Type) %>% #9,913,162
+                                        count() %>%
+                                        pivot_wider(names_from = "Election_Type", values_from = "n")
+  
+)
+
+count_table_since2020
+
+# replace NA with zero 
+count_table_since2020[is.na(count_table_since2020)] = 0
+#names(count_table_since2020)
+
+# calculate below new columns
+count_table_since2020 = count_table_since2020 %>%
+  mutate(Last4yr_times_voted = GE+PP+PR+SP) %>%
+  select(county_emsid, Last4yr_times_voted)
+
+count_table_since2020
+
+  
+```
+
+
+
+calculate how many times a voter voted since the inception of the voting history records
+```{r}
+count_table = as.data.frame(df_voter_hisotry_copy %>%
+                              select(county_emsid, Election_Type) %>%
+                              group_by(county_emsid, Election_Type) %>% #9,913,162
+                              count() %>%
+                              pivot_wider(names_from = "Election_Type", values_from = "n")
+  
+)
+
+# replace NA with zero 
+count_table[is.na(count_table)] = 0
+
+# calculate below new columns
+count_table = count_table %>%
+  mutate(Total_times_voted = GE+PP+PR+SP+RO+SB,
+         Total_times_voted_Primary = PP+PR,
+         Total_times_voted_General = GE)
+
+# double check if the total number of times voted matches the original dataset
+sum(count_table$Total_times_voted) #9913162
+count_table
+  
+```
+
+create final extract to be merged with voter registration records
+```{r}
+# all observations in count_join should be in count_table but just double checking
+count_join %>%
+  mutate(is_in_table = county_emsid %in% count_table$county_emsid) %>%
+  filter(is_in_table==FALSE) # return zero records, yay
+
+#left join count_table with count_join and count_table_since2020
+count_table = count_table %>%
+  left_join(count_join, by="county_emsid") %>%
+  mutate(Last4yr_times_voted_primary = primary_2020+primary_2021+primary_2022+primary_2023,
+         Last4yr_times_voted_general = general_2020+general_2021+general_2022+general_2023) %>%
+  left_join(count_table_since2020, by="county_emsid")
+
+# replace NA with zero 
+count_table[is.na(count_table)] = 0
+count_table
+
+# create extract
+count_table %>%
+  select(county_emsid, Total_times_voted, Total_times_voted_Primary,
+         Total_times_voted_General, Last4yr_times_voted_primary,
+         Last4yr_times_voted_general, Last4yr_times_voted) %>%
+  write.csv(file = "voting_history_processed.csv", row.names = FALSE)
+
+```
+
+
+Visualizations:
+note the difference between calculating how many people voted vs how many times each person voted
+calculate how many people voted in general election per year
+
+load the voters_gender_race extract from the voter registeration records
+```{r}
+df_gender_race = read_csv("voters_gender_race.csv")
+df_gender_race
+
+```
+
+Data cleanup
+1. Check if any county_emsid in the voting history dataset are not in the voter registeration dataset
+3. Pull gender and race columns from the voter registeration records
+```{r}
+df_voter_hisotry_copy = df_voter_hisotry_copy %>%
+  mutate(is_in_reg = county_emsid %in% df_gender_race$county_emsid) %>%
+  left_join(df_gender_race, by = "county_emsid")
+
+
+df_voter_hisotry_copy %>%
+  get_dupes()
+
+```
+
+checking missingness of the columns
+```{r}
+df_voter_hisotry_copy %>%
+  summarise(across(everything(), ~sum(is.na(.)))) #gender & race_est have 14867 missing values
+
+df_voter_hisotry_copy %>%
+  count(is_in_reg, name="UniqueNames") #14867 FALSE
+```
+
+
+```{r}
+df_time_series_GE = df_voter_hisotry_copy %>%
+  filter(Election_Type=="GE") %>%
+  select(county_emsid, gender, race_est, election_year) %>%
+  distinct() # to remove duplicates
+
+# check again if data frame has duplicated rows
+# one way to check it
+print(df_time_series_GE[duplicated(df_time_series_GE) | duplicated(df_time_series_GE, fromLast = TRUE), ])
+
+# another way to check it
+df_time_series_GE %>%
+  get_dupes()
+
+```
+
+create viz to show number of voters voted in general elections by gender
+More females voted than males
+```{r}
+df_time_series_GE %>%
+  filter(gender %in% c("F", "M")) %>%
+  select(election_year, gender) %>%
+  group_by(election_year, gender) %>%
+  mutate(cnt = n()) %>%
+  ggplot(aes(x=election_year, y=cnt, group=gender, color=gender)) +
+  geom_line() +
+    scale_color_viridis(discrete = TRUE) +
+    ggtitle("Number of voters voted in general elections by gender") +
+    theme_classic() +
+    xlab("election year") +
+    ylab("total count")
+```
+
+create viz to show general trend. total number of people voted peaked every four years on the year where Presidential election was held
+data points refer to all the years where we had presidential elections
+```{r}
+df_presidential = df_time_series_GE %>%
+  filter(election_year%% 4 ==0) %>%
+  select(election_year) %>%
+  group_by(election_year) %>%
+  summarise(cnt = n())
+
+
+df_midterm = df_time_series_GE %>%
+  filter(election_year %% 2 ==0 & election_year %% 4 !=0) %>%
+  select(election_year) %>%
+  group_by(election_year) %>%
+  summarise(cnt = n())
+
+df_time_series_GE %>%
+  filter(election_year>1984) %>%
+  select(election_year) %>%
+  group_by(election_year) %>%
+  summarise(cnt = n()) %>%
+  ggplot(aes(election_year, cnt)) + 
+  geom_line(color="grey") +
+  geom_point(show.legend = TRUE, data=df_presidential, shape=20, color="darkblue", size=3) +
+  geom_point(show.legend = TRUE, data=df_midterm, shape=20, color="darkblue", size=2) +
+  theme_classic() +
+  ggtitle("Number of voters voted in the general elections each year") +
+  labs(x = "year", y = "number of voters voted")
+
+ggsave("viz/total people voted in general elections.png")
+```
+
+create viz to show number of voters voted in general elections by race
+```{r}
+df_time_series_GE %>%
+  filter(!is.na(race_est) & election_year>1990) %>%
+  select(election_year, race_est) %>%
+  group_by(election_year, race_est) %>%
+  mutate(cnt = n()) %>%
+  ggplot(aes(x=election_year, y=cnt, group=race_est, color=race_est)) +
+  geom_line() +
+    scale_color_viridis(discrete = TRUE, option="H") +
+    ggtitle("Number of voters voted in general elections by race") +
+    theme_classic() +
+    xlab("race") +
+    ylab("total count")
+```
+
+personally I don't think area map is a good choice here. Line graphs (see above) does a better job
+```{r}
+df_time_series_GE %>%
+  filter(!is.na(race_est) & election_year>1990) %>%
+  select(election_year, race_est) %>%
+  group_by(election_year, race_est) %>%
+  mutate(cnt = n()) %>%
+  ggplot(aes(x=election_year, y=cnt, fill=race_est)) +
+    geom_area(alpha=0.6 , size=.5, colour="white") +
+    scale_fill_viridis(discrete = T) +
+    theme_ipsum() + 
+    ggtitle("Number of voters voted in general elections by race") +
+    xlab("election year") +
+    ylab("total count")
+
+
+```
+
+
+calculate how many people voted in primary election per year
+not much insight can be drawn from below plot
+```{r}
+
+df_PP = df_voter_hisotry_copy %>%
+  filter(Election_Type %in% c("PP", "PR") & election_year%% 4 ==0) %>%
+  select(county_emsid, gender, race_est, election_year) %>%
+  distinct() %>%
+  group_by(election_year) %>%
+  summarise(cnt = n())
+
+
+df_voter_hisotry_copy %>%
+  filter(Election_Type %in% c("PP", "PR")) %>%
+  select(county_emsid, gender, race_est, election_year) %>%
+  distinct() %>%
+  group_by(election_year) %>%
+  summarise(cnt = n()) %>%
+  ggplot(aes(election_year, cnt)) + 
+  geom_line(color="grey") +
+  geom_point(data=df_PP, shape=21, color="black", fill="#69b3a2", size=2) +
+  theme_ipsum() +
+  ggtitle("Number of voters voted in the primary elections each year") +
+  labs(x = "year", y = "count")
+  
+
+```
+
+
+
