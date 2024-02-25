@@ -89,6 +89,8 @@ df_voter_hisotry_copy %>% count(Election_Type, name = "UniqueCount")
 #View(df_voter_hisotry_copy)
 ```
 
+In real life, it is probably a good idea to exact the voting records for all the voting years. The way NGP VAN's VoteBuilder platform has in the voting history filter is that they all users to choose Any, All, At least, Exactly, No more than X times within a certain period for a certain type of election. For this project, I did 2020 to 2023 based on Wendy Li's campaign ask.
+
 calculate how many times a voter voted in the primary elections from year 2020 to year 2023. I chose year 2020 to year 2023 b/c it convered an election cycle (year 2020 was the last year that the Presidential Election was held
 )
 ```{r}

@@ -160,6 +160,7 @@ df_bisg
 ```
 
 create column race_est that has the maximum probability
+Note: the way NGP VAN's VoteBuilder platform does is they provide users the ability to select the probability of each race. For example, their column is called "Likely Ethnicity" and when you create filters for your voter list, you can select Asian High, Asian Medium and Asian Low (based on probability).
 ```{r}
 # Specify the columns for which you want to find the maximum
 cols_to_check <- c("pred.whi", "pred.bla", "pred.his", "pred.asi", "pred.oth")
