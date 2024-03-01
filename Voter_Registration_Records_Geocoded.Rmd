@@ -14,9 +14,10 @@ library(htmlwidgets) # use to export a leaflet map
 library(sf)
 library(wru)
 library(hrbrthemes)
+library(janitor)
 
 # install census api key. only need to run it once
-#census_api_key("abcfd68dc76cdc9ebe18edd4361a760f6f513d0c", install = TRUE)
+census_api_key("abcfd68dc76cdc9ebe18edd4361a760f6f513d0c", install = TRUE)
 
 #voters
 #install.packages("censusxy")
@@ -29,14 +30,16 @@ load geocoded voter registeration file
 df = read_csv("Queens_voters_geocodio.csv")
 df
 str(df) # 1,190,287 × 50 
-names(df)
+#names(df)
 missing_counts <- df %>%
   summarise(across(everything(), ~sum(is.na(.))))
 
 print(missing_counts)
 
 df %>%
-  filter(county_emsid=="300090040")
+  #filter(county_emsid=="300090040")
+  select(county_emsid, surname, Latitude, Longitude) %>%
+  write.csv(file = "voter_geometry.csv", row.names = FALSE)
 ```
 
 download block level shape file for Queens county, note to use 2010 data to match census year 
@@ -45,19 +48,7 @@ download block level shape file for Queens county, note to use 2010 data to matc
 ny_blocks = blocks(state = "NY", 
                    county = "Queens",
                    year = "2010")
-?blocks
-ny_blocks
-find("blocks")
 
-leaflet(ny_blocks) %>%
-  addTiles() %>%
-  addPolygons()
-
-
-st_crs(ny_blocks)
-class(ny_blocks)
-plot(ny_blocks)
-?blocks
 ```
 
 turn dataframe into a sf (spatial frames) object. crs = 4269 cooresponds to Geodetic CRS: NAD83
@@ -147,11 +138,12 @@ print(missing_counts)
 
 
 View(df_sf_block_copy)
+class(df_sf_block_copy)
 
 
 df_bisg = wru::predict_race(voter.file = df_sf_block_copy,
                             census.geo = "block",
-                            census.data = census_ny_2010,
+                            census.data = census_ny,
                             impute.missing = TRUE)
 
 class(df_bisg)
@@ -349,6 +341,23 @@ df_sf_block %>%
 
 ggsave("viz/party_composition.png")
 ```
+For some reason, the wru function did run properly the third time around so I reloaded the interim csv I saved last round back in.
+```{r}
+df_full = read_csv("voter_registration_full.csv")
+#View(df_full)
+
+#fixing the parsing issues due to the "geometry" column
+df_sf_block = df_full
+
+df_sf_block[,50:72] = df_sf_block[,51:73]
+df_sf_block = df_sf_block[, 1:72]
+
+df_sf_block = df_sf_block %>%
+  select(-geometry) #%>%
+  #View()
+```
+
+
 
 create a subset of data to facilitate analysis done in the voting history table
 ```{r}
@@ -400,13 +409,11 @@ df_sf_block = df_sf_block %>%
   left_join(df_lat_long, by = "county_emsid")
 
 df_sf_block %>%
-  write.csv(file = "voter_registration_full.csv", row.names = FALSE)
+  write.csv(file = "voter_registration_full_fixed.csv", row.names = FALSE)
 
 View(df_sf_block)
+class(df_sf_block)
 ```
-
-
-
 
 Below section is dedicated to the specific campaign asks:
 1. Create list of Chinese & Non-Democratic voters with non-blank Email_Address
@@ -493,10 +500,19 @@ df_voter_history_pri21to23 = read_csv("voting_history_primarycount21to23.csv")
 
 # select fields that are being asked to be included in the voters list
 cols_required = df_sf_block %>%
-  as.data.frame() %>%
-  filter(party_full == party_selected) %>%
-  select(county_emsid, surname, first, middle, address, apartment_number,
+  #as.data.frame() %>%
+  filter(party_full == "Democratic") %>%
+  select(county_emsid, surname, first, middle, assembly_district, address, apartment_number,
          gender, age, party_full, telephone_optional,email_address)
+
+# add assembly_district to top 100 buildings
+address_assembly = df_sf_block %>%
+  as.data.frame() %>%
+  select(address, assembly_district) %>%
+  distinct() #%>%
+  #get_dupes(address) # there is one to one relationship between the addrress and assembly_district
+
+address_assembly
 
 # user inputs
 start_pt = 1949 # starting rank number
@@ -506,13 +522,14 @@ party_selected = "Democratic"
 
 # create ranked address list determined by the number of democrats
 df_output = df_sf_block %>%
-  as.data.frame() %>%
-  filter(party_full == party_selected) %>%
+  #as.data.frame() %>%
+  filter(party_full == "Democratic") %>%
   group_by(address) %>%
   summarise(cnt_dem = n()) %>%
   #top_n(50, wt = cnt_dem) %>%
   arrange(desc(cnt_dem)) %>%
   mutate(rank_ = rank(-cnt_dem, ties.method = "min")) %>% # Gives the smallest rank to tied values
+  left_join(address_assembly, by="address")
   #filter(address=="144-44 38th AVENUE, QUEENS, NY, 11354, USA")
   #write.csv(file = "ranked_address.csv", row.names = FALSE) # list to be sent to teammate Rui who does the map
   left_join(cols_required, by="address") %>% 
@@ -543,10 +560,12 @@ lapply(names(building_list), function(building) {
   write.csv(building_list[[building]], file = file_name, row.names = FALSE)
 })
 ```
+
+
 campaign ask: flagging PRIME voters (defined by the DEM voters who have voted three times in the past three years' DEM primaries)
 ```{r}
-df_sf_block %>%
-  as.data.frame() %>%
+df_prime = df_sf_block %>%
+  #as.data.frame() %>%
   filter(party_full == "Democratic") %>%
   group_by(address) %>%
   summarise(cnt_dem = n()) %>%
@@ -558,7 +577,89 @@ df_sf_block %>%
          floor_num = as.integer(str_extract(apartment_number, "\\d+")),
          past3yr_primary_total = primary_2021 + primary_2022 + primary_2023) %>%
   filter(past3yr_primary_total>=3) #48,613 PRIME voters
+
+# Split the data frame based on "address"
+district_list <- split(df_prime, df_prime$assembly_district)
+district_list
+# create the output folder
+destination_path = "Democrat_prime_voters"
+dir.create(destination_path, showWarnings = FALSE)
+#destination_path
+
+# Save each individual data frame as a CSV file
+lapply(names(district_list), function(district) {
+  #building_rank = unique(building_list[[building]]$rank_)[1]
+  file_name = paste0(destination_path, "/", "assembly_district ", district, ".csv")
+  # sort the data in each building by floor number then apartment number
+  # building_list[[building]] = building_list[[building]][order(building_list[[building]]$floor_num,
+  #                                                             building_list[[building]]$apartment_number), ]
+  # move the floor_num column before the apartment_number column to the beginning
+  # building_list[[building]] = building_list[[building]][, c("floor_num", "apartment_number", setdiff(names(building_list[[building]]), c("floor_num", "apartment_number")))]
+  write.csv(district_list[[district]], file = file_name, row.names = FALSE)
+})
 ```
+
+campaign ask: flagging voters above 60 years of age
+```{r}
+df_60above = df_sf_block %>%
+  #as.data.frame() %>%
+  filter(party_full == "Democratic" & age >= 60) %>%
+  group_by(address) %>%
+  summarise(cnt_dem = n()) %>%
+  arrange(desc(cnt_dem)) %>%
+  mutate(rank_ = rank(-cnt_dem, ties.method = "min")) %>%
+  left_join(cols_required, by="address") %>% 
+  left_join(df_voter_history_pri21to23, by = "county_emsid") %>%
+  mutate(across(all_of(c("primary_2022", "primary_2021", "primary_2023")), ~ifelse(is.na(.), 0, .)),
+         floor_num = as.integer(str_extract(apartment_number, "\\d+")),
+         past3yr_primary_total = primary_2021 + primary_2022 + primary_2023)
+
+# Split the data frame based on "address"
+district_list <- split(df_60above, df_60above$assembly_district)
+district_list
+# create the output folder
+destination_path = "Democrat_voters_above60"
+dir.create(destination_path, showWarnings = FALSE)
+#destination_path
+
+# Save each individual data frame as a CSV file
+lapply(names(district_list), function(district) {
+  #building_rank = unique(building_list[[building]]$rank_)[1]
+  file_name = paste0(destination_path, "/", "assembly_district ", district, ".csv")
+  # sort the data in each building by floor number then apartment number
+  # building_list[[building]] = building_list[[building]][order(building_list[[building]]$floor_num,
+  #                                                             building_list[[building]]$apartment_number), ]
+  # move the floor_num column before the apartment_number column to the beginning
+  # building_list[[building]] = building_list[[building]][, c("floor_num", "apartment_number", setdiff(names(building_list[[building]]), c("floor_num", "apartment_number")))]
+  write.csv(district_list[[district]], file = file_name, row.names = FALSE)
+})
+```
+
+campaign ask: send a list of the top 100 buildings with ranking, address, and the Assembly district numbers
+```{r}
+# add assembly_district to top 100 buildings
+address_assembly = df_sf_block %>%
+  as.data.frame() %>%
+  select(address, assembly_district) %>%
+  distinct() #%>%
+  #get_dupes(address) # there is one to one relationship between the addrress and assembly_district
+
+address_assembly %>%
+  count(assembly_district, name="UniqueNames") #18 assembly districts in Queens
+
+
+df_sf_block %>%
+  filter(party_full == "Democratic") %>%
+  group_by(address) %>%
+  summarise(cnt_dem = n()) %>%
+  top_n(100, wt = cnt_dem) %>%
+  arrange(desc(cnt_dem)) %>%
+  mutate(rank_ = rank(-cnt_dem, ties.method = "min")) %>% # Gives the smallest rank to tied values
+  left_join(address_assembly, by="address") %>%
+  write.csv(file = "top100building with assembly district number.csv", row.names = FALSE)
+
+```
+
 
 
 
@@ -1413,9 +1514,6 @@ query_table = df_sf_block %>%
 ```
 
 
-
-
-
 exploring creating density maps - nothing works
 ```{r}
 
@@ -1457,7 +1555,11 @@ ny_income <- get_acs(
 
 ny_income
 
+df_sf_block_copy
+
 plot(ny_income["estimate"])
+
+st_join(df_sf_block_copy, ny_income, join = st_within)
 ```
 
 didnt't work
