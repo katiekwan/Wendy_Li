@@ -11,6 +11,7 @@
 *.html
 *.rtf
 *.zip
+*.rds
 
 # Session Data files
 .RData
