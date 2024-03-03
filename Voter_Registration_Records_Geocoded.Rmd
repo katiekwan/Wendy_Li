@@ -599,7 +599,7 @@ lapply(names(district_list), function(district) {
 })
 ```
 
-campaign ask: flagging voters above 60 years of age
+campaign ask: flagging voters above 60 years of age and group the list by assembly district
 ```{r}
 df_60above = df_sf_block %>%
   #as.data.frame() %>%
@@ -841,7 +841,7 @@ explore the correlation between age and total number of times voted
 ```{r}
 df_sf_block %>%
   as.data.frame() %>%
-  filter(voted_=="Y") %>%
+  filter(voted_=="Y" & age<75) %>%
   select(age, Total_times_voted) %>%
   ggplot(aes(x=age, y=Total_times_voted)) +
   geom_point() +
@@ -869,6 +869,24 @@ df_sf_block %>%
 ggsave("viz/party composition by race.png")
 ```
 
+Create bar chart to show race % for assembly district in Queens
+We will focus on Democratic party
+```{r}
+df_sf_block %>%
+  #as.data.frame() %>%
+  filter(party_full== "Democratic") %>%
+  group_by(assembly_district, race_est) %>%
+  summarise(cnt = n()) %>%
+  mutate(proportion = cnt/sum(cnt)*100) %>%
+  ggplot(aes(fill=race_est, y=cnt, x=assembly_district)) +
+  geom_bar(position="stack", stat="identity") +
+  coord_flip() +
+  #geom_text(aes(label = cnt, position = "stack", vjust = 1.0, color = "black", size = 3)) +
+  labs(title = "Race composition by assembly district in Queens New York", x = "assembly district", fill = "race") +
+  theme_classic()
+  
+#ggsave("viz/party composition by race.png")
+```
 
 Create bar chart to show party % by gender in Queens
 We will focus on three major parties
