@@ -12,4 +12,4 @@ Below are the steps that I took to get the block and tract number.
 3) I used the function st_join from the 'sf' package to find the block and tract number for each address in my data frame
 4) I used the function get_census_data from the 'wru' package to download the 2010 Census data for NY state. Please make sure you download the data from year 2010 because I don't think 2020 data is currently being supported in the wru package. Now you should have all you need to use the predict_race function from the 'wru' package to predict race.
 
-Voting_History.Rmd - this file was created to clean the data from the voting history records. 
+Voting_History.Rmd - this file was created to clean the data from the vote history records. 
