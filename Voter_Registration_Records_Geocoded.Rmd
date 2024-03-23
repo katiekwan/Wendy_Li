@@ -562,7 +562,7 @@ lapply(names(building_list), function(building) {
 ```
 
 
-campaign ask: flagging PRIME voters (defined by the DEM voters who have voted three times in the past three years' DEM primaries)
+campaign ask: flagging triple prime voters (defined by the DEM voters who have voted three times in the past three years' DEM primaries)
 ```{r}
 df_prime = df_sf_block %>%
   #as.data.frame() %>%
@@ -577,6 +577,9 @@ df_prime = df_sf_block %>%
          floor_num = as.integer(str_extract(apartment_number, "\\d+")),
          past3yr_primary_total = primary_2021 + primary_2022 + primary_2023) %>%
   filter(past3yr_primary_total>=3) #48,613 PRIME voters
+
+names(df_sf_block)
+df_prime
 
 # Split the data frame based on "address"
 district_list <- split(df_prime, df_prime$assembly_district)
@@ -869,7 +872,7 @@ df_sf_block %>%
 ggsave("viz/party composition by race.png")
 ```
 
-Create bar chart to show race % for assembly district in Queens
+Create bar chart to show race composition by number for assembly district in Queens
 We will focus on Democratic party
 ```{r}
 df_sf_block %>%
@@ -878,7 +881,7 @@ df_sf_block %>%
   group_by(assembly_district, race_est) %>%
   summarise(cnt = n()) %>%
   mutate(proportion = cnt/sum(cnt)*100) %>%
-  ggplot(aes(fill=race_est, y=cnt, x=assembly_district)) +
+  ggplot(aes(fill=race_est, y=cnt, x=as.factor(assembly_district))) +
   geom_bar(position="stack", stat="identity") +
   coord_flip() +
   #geom_text(aes(label = cnt, position = "stack", vjust = 1.0, color = "black", size = 3)) +
@@ -887,6 +890,48 @@ df_sf_block %>%
   
 #ggsave("viz/party composition by race.png")
 ```
+
+Create bar chart to show race omposition by % for assembly district in Queens
+We will focus on Democratic party
+```{r}
+df_sf_block %>%
+  #as.data.frame() %>%
+  filter(party_full== "Democratic") %>%
+  group_by(assembly_district, race_est) %>%
+  summarise(cnt = n()) %>%
+  mutate(proportion = cnt/sum(cnt)*100) %>%
+  ggplot(aes(fill=race_est, y=proportion, x=as.factor(assembly_district))) +
+  geom_bar(position="stack", stat="identity") +
+  #coord_flip() +
+  #geom_text(aes(label = cnt, position = "stack", vjust = 1.0, color = "black", size = 3)) +
+  geom_text(aes(label = paste0(round(proportion,1), "%")), position = "stack", vjust = 1.0, color = "black", size = 1) +
+  labs(title = "Race composition by assembly district in Queens New York", x = "assembly district", fill = "race") +
+  theme_classic()
+  
+#ggsave("viz/party composition by race.png")
+```
+It doesn't seem that census tract and assembly district have one to one relationship, neither does census block
+```{r}
+df_sf_block %>%
+  select(TRACTCE10, assembly_district) %>%
+  distinct() %>%
+  get_dupes(TRACTCE10)
+
+df_sf_block %>%
+  select(BLOCKCE10, assembly_district) %>%
+  distinct() %>%
+  get_dupes(BLOCKCE10)
+
+
+df_sf_block %>%
+  select(assembly_district, Longitude, Latitude) %>%
+  distinct() %>%
+  get_dupes(assembly_district)
+
+```
+
+
+
 
 Create bar chart to show party % by gender in Queens
 We will focus on three major parties
@@ -929,6 +974,14 @@ df_sf_block %>%
 ggsave("viz/party composition by gender_Chinese.png")
 ```
 
+you have close to 20% of registered voters who have never voted
+```{r}
+df_sf_block %>%
+  as.data.frame() %>%
+  group_by(voted_) %>%
+  summarise(cnt = n()) %>%
+  mutate(proportion = cnt/sum(cnt)*100)
+```
 
 
 
@@ -1187,6 +1240,13 @@ df_sf_block %>%
 ggsave("viz/turnout by race_genderM_Chinese vs non Chinese.png")
 ```
 
+```{r}
+df_sf_block %>%
+  #as.data.frame() %>%
+  #filter(voted_=="Y" & gender %in% c("F", "M")) %>%
+  group_by(party_full) %>%
+  summarise(cnt = n())
+```
 
 
 
