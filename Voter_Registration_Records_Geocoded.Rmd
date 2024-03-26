@@ -378,7 +378,7 @@ df_voting_hist = read_csv("voting_history_processed.csv")
 df_voting_hist
 ```
 
-Merge voter registeration with voting history records
+Merge voter registration with voting history records
 ```{r}
 df_sf_block = df_sf_block %>%
   left_join(df_voting_hist, by = "county_emsid") %>%
@@ -664,6 +664,79 @@ df_sf_block %>%
 ```
 
 
+how to reach your vote goal? vote goal/winning number is about 200,000 votes. That translates to top 3,785 buildings/houses in Queens county
+```{r}
+View(df_sf_block)
+View(df_voter_history_pri21to23)
+
+# select fields that are being asked to be included in the voters list
+df_sf_block_mini = df_sf_block %>%
+  #as.data.frame() %>%
+  filter(party_full == "Democratic") %>%
+  select(county_emsid, surname, first, middle, gender, age, race_est, is_Chinese,
+         telephone_optional, email_address, address, apartment_number,
+         assembly_district, election_district) %>%
+  left_join(df_voter_history_pri21to23, by="county_emsid") %>%
+  mutate_at(vars(c("triple_prime", "double_prime")), ~ifelse(is.na(.), 'N', .))
+
+df_sf_block_mini
+
+# 42,161 triple prime voters
+df_sf_block_mini %>%
+  filter(triple_prime == "Y") %>%
+  group_by(race_est) %>%
+  summarise(cnt = n()) %>%
+  mutate(proportion = (cnt/sum(cnt))*100) %>%
+  ggplot(aes(y=proportion, x=fct_reorder(race_est, proportion, .desc=TRUE))) +
+  geom_bar(position="dodge", stat="identity", fill="skyblue") +
+  geom_text(aes(label = paste0(round(proportion,1), "%")), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "Race composition among triple prime voters in Queens New York", x = "race") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("viz/race_composition_triple_prime.png")
+
+
+df_sf_block_mini %>%
+  filter(triple_prime == "Y") %>%
+  ggplot(aes(x = fct_reorder(race_est, age, .desc=TRUE), y = age, fill=race_est)) +
+  geom_boxplot() +
+  coord_flip() +
+  theme_classic() +
+  labs(title = "Triple prime voters age box plot by race", x = "race") +
+  theme(legend.position="none")
+
+ggsave("viz/triple prime age box plot by race.png")
+
+```
+
+vote goal calculator. We can create some tiers here
+```{r}
+
+# 42,161 triple prime voters
+df_sf_block_mini %>%
+  filter(triple_prime == "Y")
+
+# 60,650 double prime voters
+df_sf_block_mini %>%
+  filter(double_prime == "Y")
+
+# 50,517 Chinese voters that are not triple nor double prime voters
+df_sf_block_mini %>%
+  filter(double_prime == "N" & triple_prime == "N" & is_Chinese == TRUE)
+
+# 164,516 Asian voters that are not triple nor double prime voters
+df_sf_block_mini %>%
+  filter(double_prime == "N" & triple_prime == "N" & race_est == "asian")
+
+# 271,167 elder voters that are not triple nor double prime voters
+df_sf_block_mini %>%
+  filter(double_prime == "N" & triple_prime == "N" & age >= 55)
+
+```
 
 
 Below section is dedicated to testing the logistic modeling. First, we are going to check the proportion of the below. The assumption here is that if we can't locate a voting record for a voter, we are going to assume that voter has never voted.
@@ -887,8 +960,8 @@ df_sf_block %>%
   #geom_text(aes(label = cnt, position = "stack", vjust = 1.0, color = "black", size = 3)) +
   labs(title = "Race composition by assembly district in Queens New York", x = "assembly district", fill = "race") +
   theme_classic()
-  
-#ggsave("viz/party composition by race.png")
+
+ggsave("viz/party composition by assembly district.png")
 ```
 
 Create bar chart to show race omposition by % for assembly district in Queens
