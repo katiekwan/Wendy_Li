@@ -1,6 +1,6 @@
 # Wendy-Li-for-Surrogate-campaign-fellowship
 
-I started working as a data science on a local campaign back in January. This repository contains all the EDA and project work that I have done for the campaign. Most of the work is done in R. Please feel free to reach out to me at erinyyu3@gmail.com if you have any questions!
+I started working as a data analyst on a local campaign back in January. This repository contains all the EDA and project work that I have done for the campaign. Most of the work is done in R. Please feel free to reach out to me at erinyyu3@gmail.com if you have any questions!
 
 Voter_Registeration_Records_Raw.Rmd - this file illustrates using several R packages to predict race without geocoded information such as longtitude and latitude. zipWRUext2 package takes zipcode and last name as inputs to make the prediction.
 
