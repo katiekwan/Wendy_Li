@@ -357,6 +357,40 @@ df_sf_block = df_sf_block %>%
   #View()
 ```
 
+add age_group to facilitate 2022 and 2020 turnout % calculate in Voting_History worksheet
+```{r}
+df_sf_block = df_sf_block %>%
+  #count(age, name="UniqueNames")
+  mutate(age_group = case_when(
+    age >= 18 & age <= 29 ~ "18-29",
+    age >= 30 & age <= 39 ~ "30-39",
+    age >= 40 & age <= 49 ~ "40-49",
+    age >= 50 & age <= 64 ~ "50-64",
+    age >= 65 ~ "65+"),
+    age_group_gender = paste(age_group, " ", gender)) #%>%
+  #select(age, age_group, gender, age_group_gender)
+```
+
+
+create bar chart on party proportion in Queens
+```{r}
+df_sf_block %>%
+  group_by(age_group) %>%
+  summarise(cnt = n()) %>%
+  mutate(proportion = cnt/sum(cnt)*100) %>%
+  ggplot(aes(y=proportion, x=age_group)) +
+  #ggplot(aes(y=proportion, x=fct_reorder(age_group, proportion, .desc=FALSE))) +
+  geom_bar(position="dodge", stat="identity", fill="brown") +
+  geom_text(aes(label = paste0(round(proportion,2), "%")), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "Age composition among registered voters in Queens New York", x = "age_group") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("viz/age_composition.png")
+```
 
 
 create a subset of data to facilitate analysis done in the voting history table
@@ -364,8 +398,8 @@ create a subset of data to facilitate analysis done in the voting history table
 #names(df_sf_block)
 
 df_sf_block %>%
-  as.data.frame() %>%
-  select(county_emsid, gender, race_est) %>%
+  #as.data.frame() %>%
+  select(county_emsid, gender, race_est, age_group_gender) %>%
   write.csv(file = "voters_gender_race.csv", row.names = FALSE)
 
 ```

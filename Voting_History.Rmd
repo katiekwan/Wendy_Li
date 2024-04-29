@@ -100,9 +100,19 @@ In real life, it is probably a good idea to exact the voting records for all the
 
 calculate how many times a voter voted in the primary elections from year 2020 to year 2023. I chose year 2020 to year 2023 b/c it covered an election cycle (year 2020 was the last year that the Presidential Election was held
 )
+
+```{r}
+df_voter_hisotry_copy %>%
+  select(Election_Type, election_year) %>%
+  distinct() %>%
+  arrange(election_year)
+
+```
+
 ```{r}
 count_primary = as.data.frame(df_voter_hisotry_copy %>%
-  filter((Election_Type %in% c("PP", "PR")) & election_year>2019) %>%
+  #filter((Election_Type %in% c("PP", "PR")) & election_year>2019) %>%
+  filter(Election_Type == "PR" & election_year>2019) %>%
   select(county_emsid, election_year) %>% #606,983 observations
   group_by(county_emsid, election_year) %>%
   count() %>%
@@ -111,6 +121,8 @@ count_primary = as.data.frame(df_voter_hisotry_copy %>%
 
 # replace NA with value zero
 count_primary[is.na(count_primary)] = 0
+
+count_primary
 
 # arrange the order of columns
 count_primary = count_primary[, c("county_emsid", "primary_2020",
@@ -126,6 +138,9 @@ sum(colSums(count_primary[c("primary_2020","primary_2022","primary_2021","primar
 count_primary #310,307 observations
 ```
 
+
+
+
 Campaign ask: list years that voters voted from 2021 to 2023 (primary elections only)
 also I added flags to identify Double/Triple Prime Voter
 A person who has voted in two of the last three primaries or three of the
@@ -134,15 +149,16 @@ voting behavior histories.
 ```{r}
 count_primary %>%
   #filter(!(primary_2021==0 & primary_2022==0 & primary_2023==0)) %>%
-  select(county_emsid, primary_2021, primary_2022, primary_2023) %>%
-  mutate(zeros_count = rowSums(. ==0)) %>% # count how many zeros in column primary_2021, primary_2022 and primary_2023
+  #select(county_emsid, primary_2021, primary_2022, primary_2023) %>%
+  #mutate(zeros_count = rowSums(. ==0)) %>% # count how many zeros in column primary_2021, primary_2022 and primary_2023
+  mutate(pr_count = 4 - rowSums(. ==0)) %>%
   #count(primary_2022, name='UniqueNames')
-  mutate(triple_prime = ifelse(zeros_count==0, "Y", "N"),
-         double_prime = ifelse(zeros_count==1, "Y", "N")) %>%
-  filter(!(zeros_count==3)) %>%
-  select(-zeros_count) %>%
-  #count(zeros_count, name='UniqueNames')
-  write.csv(file = "voting_history_primarycount21to23.csv", row.names = FALSE)
+  # mutate(triple_prime = ifelse(zeros_count<=1, "Y", "N"),
+  #        double_prime = ifelse(zeros_count==2, "Y", "N")) %>%
+  #filter(!(zeros_count==4)) %>%
+  select(county_emsid, pr_count) %>%
+  #count(pr_count, name='UniqueNames')
+  write.csv(file = "voting_history_primarycount20to23.csv", row.names = FALSE)
 
 ```
 
@@ -308,6 +324,12 @@ df_voter_hisotry_copy %>%
 df_voter_hisotry_copy %>%
   count(is_in_reg, name="UniqueNames") #14867 FALSE
 ```
+
+```{r}
+df_voter_hisotry_copy
+```
+
+
 
 
 ```{r}
